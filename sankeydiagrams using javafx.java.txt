@@ -1,0 +1,271 @@
+import javafx.application.Application;
+import javafx.scene.Scene;
+import javafx.scene.control.ColorPicker;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.*;
+import javafx.scene.shape.Rectangle;
+import javafx.scene.text.Text;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
+import javafx.scene.control.Button;
+import javafx.scene.control.TextField;
+import javafx.geometry.Insets;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class test extends Application {
+
+    private double xOffset = 250;
+    private double yOffset = 250;
+    private double nodeHeight = 500;
+    private double nodeWidth = 25;
+    private String nodeName;
+    private String stageName;
+    private Pane root;
+    private String filePath;
+
+    @Override
+    public void start(Stage primaryStage) {
+        // Creates a text input box for entering the file path
+        TextField filePathField = new TextField();
+
+        // Create button
+        Button loadButton = new Button("Load and Generate Sankey Diagram");
+        //Create testname
+        Text sankey=new Text("sankey diagram");
+        sankey.setFont(Font.font(35));
+        //Set prompt language
+        Text tip=new Text("Please Enter the file path(remove \")");
+        tip.setFont(Font.font(16));
+        // Set button click event
+        loadButton.setOnAction(event -> {
+            filePath = filePathField.getText();
+            try {
+                root = new Pane();
+                Map<String, Integer> dataMap = readData(filePath);
+                drawSankey(dataMap, primaryStage.getWidth(), primaryStage.getHeight());
+                primaryStage.widthProperty().addListener((observable, oldValue, newValue) -> {
+                    drawSankey(dataMap, newValue.doubleValue(), primaryStage.getHeight());
+                });
+                primaryStage.heightProperty().addListener((observable, oldValue, newValue) -> {
+                    drawSankey(dataMap, primaryStage.getWidth(), newValue.doubleValue());
+                });
+                Scene scene = new Scene(root, 1000, 1000);
+                primaryStage.setTitle(stageName);
+                primaryStage.setScene(scene);
+                primaryStage.show();
+            } catch (IOException e) {
+                e.printStackTrace(); // Print error message
+            }
+        });
+
+        // Create a vertical layout and add text boxes and buttons
+        VBox layout = new VBox(10,sankey,tip,filePathField, loadButton);
+        layout.setPadding(new Insets(320, 100, 100, 100));
+
+        // Create the scene and set it to the stage
+        Scene scene = new Scene(layout, 1000, 800);
+        primaryStage.setTitle("Sankey Diagram Generator");
+        primaryStage.setScene(scene);
+        primaryStage.show();
+    }
+
+
+
+    private Map<String, Integer> readData(String filename) throws IOException {
+        File file = new File(filename);
+        Map<String, Integer> dataMap = new HashMap<>();
+        try (BufferedReader bufferedReader = new BufferedReader(new FileReader(file))) {
+            stageName = bufferedReader.readLine().trim();
+            nodeName = bufferedReader.readLine().trim();
+            String line;
+            while ((line = bufferedReader.readLine()) != null) {
+                int lastSpaceIndex = line.lastIndexOf(" ");
+                if (lastSpaceIndex > 0) {
+                    String key = line.substring(0, lastSpaceIndex).trim();
+                    String valueString = line.substring(lastSpaceIndex + 1).trim();
+                    try {
+                        int value = Integer.parseInt(valueString); // Attempts to convert a numeric string to an integer
+                        // If the Map already contains the key, its value is added
+                        if (dataMap.containsKey(key)) {
+                            dataMap.put(key, dataMap.get(key) + value);
+                        } else {
+                            // Otherwise, the key-value pair is directly added to the Map
+                            dataMap.put(key, value);
+                        }
+                        //dataMap.put(key, value); // If the conversion is successful, the keys and values are added to the map
+                    } catch (NumberFormatException e) {
+                        // If an exception is thrown, the numeric string is not an integer
+                        System.out.println("This part cannot be resolved as an integer: " + valueString);
+                    }
+
+
+                } else {
+                    System.out.println("Malformed line: " + line);
+                }
+            }
+        }
+        return dataMap;
+    }
+
+    private void drawSankey(Map<String, Integer> dataMap,double stageWidth, double stageHeight) {
+        root.getChildren().clear(); // Clear the existing diagram
+        double sumHeight = 0;
+        int sumCount = 0;
+
+        // Calculate the total flow and the number of streams
+        for (int value : dataMap.values()) {
+            sumHeight += value;
+            sumCount++;
+        }
+        // Adjust the size of the initial node based on window size
+        double dynamicNodeWidth = nodeWidth * stageWidth / 1000;
+        double dynamicNodeHeight = nodeHeight * stageHeight / 1000;
+
+
+
+        double eachY = yOffset;
+        int count = 0; // 用于追踪当前处理的流的数量
+
+        for (Map.Entry<String, Integer> entry : dataMap.entrySet()) {
+            // Plot  begin node
+            Rectangle nodeRect = new Rectangle(xOffset, yOffset, dynamicNodeWidth, dynamicNodeHeight);
+            Text nodeText = new Text(xOffset -dynamicNodeWidth * 5, yOffset + dynamicNodeHeight / 2, nodeName + ":" + sumHeight);
+            nodeText.setFont(Font.font("null", FontWeight.BOLD, 12));
+            nodeRect.setFill(getTargetNodeColor(count));
+            root.getChildren().addAll(nodeRect, nodeText);
+
+            String key = entry.getKey();
+            int value = entry.getValue();
+            double flowHeight = (entry.getValue() / sumHeight) * dynamicNodeHeight;
+
+            // Create a closed path
+            Color flowColor = getTargetNodeColor(count);
+            Path path = new Path();
+            //Top Bezier curve
+            MoveTo moveToUp = new MoveTo(xOffset + dynamicNodeWidth, eachY);
+            CubicCurveTo cubicCurveToUp;
+            cubicCurveToUp = new CubicCurveTo(
+                    xOffset + dynamicNodeWidth + 100, eachY,
+                    xOffset + dynamicNodeWidth + 150, eachY + ((count - (sumCount / 2)) * 60),
+                    xOffset + dynamicNodeWidth + 350, eachY + ((count - (sumCount / 2)) * 60)
+            );
+            // The bottom Bezier curve
+            MoveTo moveToDown = new MoveTo(xOffset + dynamicNodeWidth + 350, eachY + flowHeight + ((count - (sumCount / 2)) * 60));
+            CubicCurveTo cubicCurveToDown;
+            cubicCurveToDown = new CubicCurveTo(
+                    xOffset + dynamicNodeWidth + 150, eachY + flowHeight + ((count - (sumCount / 2)) * 60),
+                    xOffset + dynamicNodeWidth + 100, eachY + flowHeight,
+                    xOffset + dynamicNodeWidth, eachY + flowHeight
+            );
+
+            // add them to path
+            path.getElements().addAll(
+                    moveToUp,
+                    cubicCurveToUp,
+                    new LineTo(xOffset + dynamicNodeWidth + 350, eachY + flowHeight + ((count - (sumCount / 2)) * 60)),
+                    cubicCurveToDown,
+                    new LineTo(xOffset +dynamicNodeWidth, eachY)
+            );
+            path.setFill(getTargetNodeColor(count));
+            path.setStroke(null);
+
+            // Plot end node
+            Rectangle endRect = new Rectangle(
+                    xOffset + dynamicNodeWidth + 350, eachY + ((count - (sumCount / 2)) * 60) , dynamicNodeWidth, flowHeight
+            );
+            endRect.setFill(flowColor.darker());
+            // Add a click event to the stream
+            int finalCount = count;
+            path.setOnMouseClicked(event -> {
+                int index = finalCount;//Computes an index value
+                        Color initialColor = getTargetNodeColor(index);
+                ColorPicker colorPicker = new ColorPicker(initialColor);
+
+                // show ColorPicker
+                colorPicker.show();
+
+                // Updates the color of the stream when the user selects the color
+                colorPicker.setOnAction(e -> {
+                    Color newColor = colorPicker.getValue();
+                    path.setFill(newColor);
+                    //add user feedback here
+                });
+
+                // The ColorPicker closing event
+                colorPicker.setOnHiding(e -> {
+                   System.out.println("you can color your flow again");
+                });
+                Stage stage = new Stage();
+                stage.initModality(Modality.APPLICATION_MODAL);
+                VBox dialogVbox = new VBox(20);
+                dialogVbox.getChildren().add(colorPicker);
+                Scene dialogScene = new Scene(dialogVbox, 200, 200);
+                stage.setScene(dialogScene);
+                stage.show();
+
+            });
+
+            // add label
+            Text label = new Text(
+                    xOffset + nodeWidth + 350 + 50, eachY + ((count - (sumCount / 2)) * 60)+flowHeight/2, key + ": " + value
+            );
+            label.setFill(Color.BLACK);
+            label.setFont(Font.font("null", FontWeight.BOLD, 12));
+            //add to root
+            root.getChildren().addAll(path, endRect, label);
+
+            eachY += flowHeight;
+            count++;
+        }
+    }
+
+    //if the we get a lots flows, we can use random color to fit all flows
+    private static Color randomColor() {
+        return new Color(Math.random(), Math.random(), Math.random(), 1.0);
+    }
+
+    //choose flow color
+    private static Color getTargetNodeColor(int i) {
+        // Defines the color library for the line
+        List<Color> colorList = new ArrayList<>();
+        colorList.add(Color.rgb(50, 205, 50));
+        colorList.add(Color.rgb(60, 179, 113));
+        colorList.add(Color.rgb(65, 105, 225));
+        colorList.add(Color.rgb(70, 130, 180));
+        colorList.add(Color.rgb(218, 112, 214));
+        colorList.add(Color.rgb(233, 150, 122));
+        colorList.add(Color.rgb(238, 232, 170));
+        colorList.add(Color.rgb(173, 255, 47));
+        colorList.add(Color.rgb(32, 178, 170));
+        colorList.add(Color.rgb(46, 139, 87));
+        colorList.add(Color.rgb(0, 255, 127));
+        colorList.add(Color.rgb(0, 206, 209));
+        colorList.add(Color.rgb(64, 224, 208));
+        colorList.add(Color.rgb(123, 104, 238));
+        colorList.add(Color.rgb(127, 255, 212));
+        colorList.add(Color.rgb(147, 112, 219));
+        colorList.add(Color.rgb(152, 251, 152));
+        // You can add colors and choose colors  https://seo.juziseo.com/tools/web_color/
+        if (i >= colorList.size()) {
+            i = i - i / colorList.size()*i;
+        }
+        return colorList.get(i);
+    }
+
+    //main method start javafx
+    public static void main(String[] args) {
+        launch(args);
+    }
+}
+
